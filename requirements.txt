@@ -1,0 +1,10 @@
+aiogram==3.22.0
+aiosqlite
+apscheduler
+gTTS
+pydantic-settings
+python-dotenv
+aiohttp
+aiosqlite
+eng-to-ipa
+aiohttp
