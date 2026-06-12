@@ -185,20 +185,15 @@
 
         let translationsList = [];
 
-        // =========================
-        // DEBUG LOGGER
-        // =========================
-        const debug = (tag, data) => {
-            console.log(`[DEBUG ${tag}]`, data);
-        };
+        // ======================
+        // DEBUG HELPERS
+        // ======================
+        const log = (...args) => console.log('[DEBUG]', ...args);
+        const err = (...args) => console.error('[ERROR]', ...args);
 
-        const error = (tag, data) => {
-            console.error(`[ERROR ${tag}]`, data);
-        };
-
-        // =========================
+        // ======================
         // DOM
-        // =========================
+        // ======================
         const wordInput = document.getElementById('word');
         const transcriptionInput = document.getElementById('transcription');
         const definitionInput = document.getElementById('definition');
@@ -209,46 +204,36 @@
         const btnText = document.getElementById('btn-text');
         const btnSpinner = document.getElementById('btn-spinner');
 
-        // =========================
+        // ======================
         // MAIN BUTTON
-        // =========================
-        function initMainButton() {
-            tg.MainButton.setText("СОХРАНИТЬ СЛОВО");
-            tg.MainButton.show();
-            tg.MainButton.disable();
-        }
-
+        // ======================
         function updateMainButton() {
             const word = wordInput.value.trim();
             const ok = word && translationsList.length > 0;
 
-            debug('MAIN_BUTTON_STATE', { word, translationsList, ok });
+            log('MAIN_BUTTON_STATE', { word, translationsList, ok });
 
-            if (ok) {
-                tg.MainButton.enable();
-            } else {
-                tg.MainButton.disable();
-            }
+            if (ok) tg.MainButton.enable();
+            else tg.MainButton.disable();
         }
 
-        initMainButton();
+        tg.MainButton.setText("СОХРАНИТЬ СЛОВО");
+        tg.MainButton.show();
+        tg.MainButton.disable();
 
-        // =========================
+        // ======================
         // CHIPS
-        // =========================
+        // ======================
         function updateChips() {
-            debug('CHIPS_UPDATE', translationsList);
+            log('UPDATE_CHIPS', translationsList);
 
             chipsContainer.innerHTML = '';
 
-            translationsList.forEach((trans, index) => {
-                const chip = document.createElement('div');
-                chip.className = 'chip';
-                chip.innerHTML = `
-                    ${trans}
-                    <span class="close-btn" data-index="${index}">&times;</span>
-                `;
-                chipsContainer.appendChild(chip);
+            translationsList.forEach((t, i) => {
+                const el = document.createElement('div');
+                el.className = 'chip';
+                el.innerHTML = `${t} <span class="close-btn" data-index="${i}">&times;</span>`;
+                chipsContainer.appendChild(el);
             });
 
             updateMainButton();
@@ -256,11 +241,10 @@
 
         chipsContainer.addEventListener('click', (e) => {
             if (e.target.classList.contains('close-btn')) {
-                const index = Number(e.target.dataset.index);
+                const i = Number(e.target.dataset.index);
+                log('REMOVE_CHIP', i, translationsList[i]);
 
-                debug('CHIP_REMOVE', { index, value: translationsList[index] });
-
-                translationsList.splice(index, 1);
+                translationsList.splice(i, 1);
                 updateChips();
             }
         });
@@ -270,23 +254,15 @@
 
             e.preventDefault();
 
-            const value = translationInput.value.trim();
-            debug('TRANSLATION_INPUT', value);
+            const val = translationInput.value.trim();
+            log('ADD_TRANSLATION_INPUT', val);
 
-            if (!value) return;
+            if (!val) return;
 
-            const normalized = value.toLowerCase();
-
-            const exists = translationsList.some(
-                x => x.toLowerCase() === normalized
-            );
-
-            if (!exists) {
-                translationsList.push(value);
-                debug('TRANSLATION_ADD', translationsList);
+            if (!translationsList.includes(val)) {
+                translationsList.push(val);
+                log('TRANSLATIONS_LIST', translationsList);
                 updateChips();
-            } else {
-                debug('TRANSLATION_DUPLICATE', value);
             }
 
             translationInput.value = '';
@@ -294,75 +270,83 @@
 
         wordInput.addEventListener('input', updateMainButton);
 
-        // =========================
-        // FETCH LOGIC
-        // =========================
+        // ======================
+        // FETCH
+        // ======================
         btnFetch.addEventListener('click', async () => {
-            debug('FETCH_CLICK', true);
+            log('================ FETCH CLICK ================');
 
             const word = wordInput.value.trim();
-            debug('WORD', word);
+            log('WORD_INPUT', word);
 
             if (!word) {
-                debug('FETCH_ABORT', 'empty word');
-                tg.showAlert("Сначала введи английское слово!");
+                log('ABORT: empty word');
+                tg.showAlert("Сначала введи слово");
                 return;
             }
+
+            const url = `https://freedictionaryapi.com/api/v1/entries/en/${word.toLowerCase()}?translations=true`;
+
+            log('REQUEST_URL', url);
 
             btnText.classList.add('hidden');
             btnSpinner.style.display = 'block';
 
-            const url =
-                `https://freedictionaryapi.com/api/v1/entries/en/${word.toLowerCase()}?translations=true`;
-
-            debug('REQUEST_URL', url);
-
             const controller = new AbortController();
             const timeout = setTimeout(() => {
-                debug('FETCH_ABORT_TIMEOUT', true);
+                log('TIMEOUT ABORT');
                 controller.abort();
             }, 10000);
 
             try {
+                log('FETCH START');
+
                 const response = await fetch(url, {
                     signal: controller.signal
                 });
 
-                debug('RESPONSE_STATUS', response.status);
-                debug('RESPONSE_OK', response.ok);
+                log('RESPONSE_STATUS', response.status);
+                log('RESPONSE_OK', response.ok);
 
-                const data = await response.json();
+                const rawText = await response.text();
+                log('RAW_TEXT', rawText);
 
-                debug('RAW_DATA', data);
-                debug('IS_ARRAY', Array.isArray(data));
+                let data;
+                try {
+                    data = JSON.parse(rawText);
+                    log('PARSED_JSON', data);
+                } catch (parseErr) {
+                    err('JSON_PARSE_ERROR', parseErr);
+                    return;
+                }
+
+                log('DATA_TYPE', typeof data);
+                log('IS_ARRAY', Array.isArray(data));
+                log('DATA_LENGTH', data?.length);
 
                 const entry = data?.[0]?.entries?.[0];
 
-                debug('ENTRY', entry);
+                log('ENTRY', entry);
 
                 if (!entry) {
-                    error('NO_ENTRY', data);
+                    err('NO_ENTRY_FOUND', data);
                     tg.showAlert("Нет данных по слову");
                     return;
                 }
 
-                // =========================
-                // TRANSCRIPTION
-                // =========================
-                let uk, us;
+                // ======================
+                // PRONUNCIATION
+                // ======================
+                log('PRONUNCIATIONS', entry.pronunciations);
 
-                debug('PRONUNCIATIONS', entry.pronunciations);
+                let uk = '';
+                let us = '';
 
                 entry.pronunciations?.forEach(p => {
-                    if (!p.text) return;
+                    log('PRON_ITEM', p);
 
-                    if (p.tags?.includes("Received Pronunciation") && !uk) {
-                        uk = p.text;
-                    }
-
-                    if (p.tags?.includes("General American") && !us) {
-                        us = p.text;
-                    }
+                    if (p.tags?.includes('Received Pronunciation')) uk = p.text;
+                    if (p.tags?.includes('General American')) us = p.text;
                 });
 
                 const parts = [];
@@ -371,69 +355,78 @@
 
                 transcriptionInput.value =
                     parts.length ? parts.join(' | ')
-                    : (entry.pronunciations?.[0]?.text || '');
+                    : entry.pronunciations?.[0]?.text || '';
 
-                debug('TRANSCRIPTION', transcriptionInput.value);
+                log('TRANSCRIPTION', transcriptionInput.value);
 
-                // =========================
+                // ======================
                 // DEFINITION
-                // =========================
-                const firstSense = entry.senses?.[0];
+                // ======================
+                const sense = entry.senses?.[0];
 
-                if (firstSense) {
-                    definitionInput.value = firstSense.definition || '';
-                    contextInput.value = firstSense.examples?.[0] || '';
+                log('FIRST_SENSE', sense);
+
+                if (sense) {
+                    definitionInput.value = sense.definition || '';
+                    contextInput.value = sense.examples?.[0] || '';
                 }
 
-                debug('DEFINITION', definitionInput.value);
-                debug('CONTEXT', contextInput.value);
+                log('DEFINITION', definitionInput.value);
+                log('CONTEXT', contextInput.value);
 
-                // =========================
+                // ======================
                 // TRANSLATIONS
-                // =========================
+                // ======================
                 if (autoTranslationsEnabled) {
+                    log('AUTO_TRANSLATIONS_ENABLED');
+
                     const set = new Set();
 
-                    entry.senses?.forEach(sense => {
-                        sense.translations?.forEach(t => {
+                    entry.senses?.forEach((s, si) => {
+                        log('SENSE', si, s);
+
+                        s.translations?.forEach(t => {
+                            log('TRANSLATION_ITEM', t);
+
                             const code = t.language?.code;
 
                             if (code === 'ru' || code === 'rus') {
-                                if (t.word) set.add(t.word);
+                                set.add(t.word);
                             }
                         });
                     });
 
                     translationsList = [...set];
 
-                    debug('AUTO_TRANSLATIONS', translationsList);
+                    log('FINAL_TRANSLATIONS', translationsList);
 
                     updateChips();
                 }
 
                 updateMainButton();
 
-                debug('SUCCESS', 'UI updated');
+                log('SUCCESS: UI updated');
 
             } catch (e) {
-                console.log(e)
-                error('FETCH_ERROR', e);
-                tg.showAlert("Ошибка API. Попробуй позже.");
+                err('FETCH_ERROR', e);
+                err('STACK', e?.stack);
+
+                tg.showAlert("Ошибка API или сети");
             } finally {
                 clearTimeout(timeout);
 
                 btnText.classList.remove('hidden');
                 btnSpinner.style.display = 'none';
 
-                debug('FETCH_DONE', true);
+                log('FETCH_FINISHED');
             }
         });
 
-        // =========================
-        // SUBMIT
-        // =========================
+        // ======================
+        // SEND DATA
+        // ======================
         tg.onEvent('mainButtonClicked', () => {
-            debug('MAIN_BUTTON_CLICKED', true);
+            log('MAIN_BUTTON_CLICKED');
 
             const payload = {
                 word: wordInput.value.trim(),
@@ -443,12 +436,7 @@
                 context: contextInput.value.trim()
             };
 
-            debug('PAYLOAD', payload);
-
-            if (!payload.word || !payload.translations.length) {
-                tg.showAlert("Заполни слово и добавь перевод");
-                return;
-            }
+            log('PAYLOAD', payload);
 
             tg.sendData(JSON.stringify(payload));
             tg.close();
