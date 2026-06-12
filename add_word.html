@@ -171,26 +171,24 @@
             <textarea id="context" rows="3" placeholder="Добавь предложение с этим словом..."></textarea>
         </div>
     </div>
-
     <script>
-        // 1. Инициализация Telegram SDK
+        // 1. Инициализация Telegram WebApp
         const tg = window.Telegram.WebApp;
-        
-        // Сигнализируем Telegram, что интерфейс готов к показу
+
         tg.ready();
         tg.expand();
 
-        // Динамически вешаем класс темы на body для кастомных фиксов CSS
-        document.body.className = tg.colorScheme === 'dark' ? 'tg-theme-dark' : 'tg-theme-light';
+        document.body.className =
+            tg.colorScheme === 'dark' ? 'tg-theme-dark' : 'tg-theme-light';
 
-        // 2. Чтение URL параметров (?translations=true)
+        // 2. URL параметры
         const urlParams = new URLSearchParams(window.location.search);
         const autoTranslationsEnabled = urlParams.get('translations') === 'true';
 
-        // Данные приложения
+        // 3. State
         let translationsList = [];
 
-        // DOM-элементы
+        // 4. DOM
         const wordInput = document.getElementById('word');
         const transcriptionInput = document.getElementById('transcription');
         const definitionInput = document.getElementById('definition');
@@ -201,146 +199,196 @@
         const btnText = document.getElementById('btn-text');
         const btnSpinner = document.getElementById('btn-spinner');
 
-        // 3. Настройка нативной Главной Кнопки ТГ (MainButton)
+        // 5. MainButton
+        function updateMainButton() {
+            const word = wordInput.value.trim();
+            const hasTranslations = translationsList.length > 0;
+
+            if (word && hasTranslations) {
+                tg.MainButton.show();
+                tg.MainButton.enable();
+            } else {
+                tg.MainButton.disable();
+            }
+        }
+
         function initMainButton() {
             tg.MainButton.setText("СОХРАНИТЬ СЛОВО");
-            // Безопасно выставляем цвета без вызова несуществующих методов строк
-            tg.MainButton.setParams({
-                is_visible: true,
-                is_active: true
-            });
+            tg.MainButton.show();
+            tg.MainButton.disable();
         }
+
         initMainButton();
 
-        // Логика добавления "чипсов" перевода
+        // 6. Chips UI
         function updateChips() {
             chipsContainer.innerHTML = '';
+
             translationsList.forEach((trans, index) => {
                 const chip = document.createElement('div');
                 chip.className = 'chip';
-                chip.innerHTML = `${trans} <span class="close-btn" data-index="${index}">&times;</span>`;
+                chip.innerHTML = `
+                    ${trans}
+                    <span class="close-btn" data-index="${index}">&times;</span>
+                `;
                 chipsContainer.appendChild(chip);
             });
+
+            updateMainButton();
         }
 
-        // Делегирование события клика для удаления чипсов
         chipsContainer.addEventListener('click', (e) => {
             if (e.target.classList.contains('close-btn')) {
-                const index = parseInt(e.target.getAttribute('data-index'));
+                const index = Number(e.target.dataset.index);
                 translationsList.splice(index, 1);
                 updateChips();
             }
         });
 
-        // Добавление перевода по Enter
-        translationInput.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault(); // Запрещаем сабмит формы или перенос строки
-                const value = this.value.trim();
-                if (value && !translationsList.includes(value)) {
-                    translationsList.push(value);
-                    updateChips();
-                    this.value = '';
-                }
+        // 7. Добавление перевода
+        translationInput.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter') return;
+
+            e.preventDefault();
+
+            const value = translationInput.value.trim();
+            if (!value) return;
+
+            const normalized = value.toLowerCase();
+
+            const exists = translationsList.some(
+                x => x.toLowerCase() === normalized
+            );
+
+            if (!exists) {
+                translationsList.push(value);
+                updateChips();
             }
+
+            translationInput.value = '';
         });
 
-        // 4. Логика запроса к API словаря
+        // 8. Fetch API
         btnFetch.addEventListener('click', async () => {
             const word = wordInput.value.trim();
+
             if (!word) {
                 tg.showAlert("Сначала введи английское слово!");
                 return;
             }
 
-            // Включаем лоадер
             btnText.classList.add('hidden');
             btnSpinner.style.display = 'block';
 
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 10000);
+
             try {
-                const response = await fetch(`https://freedictionaryapi.com/api/v1/entries/en/${word.toLowerCase()}?translations=true`);
-                if (!response.ok) throw new Error("Слово не найдено");
-                
+                const response = await fetch(
+                    `https://freedictionaryapi.com/api/v1/entries/en/${word.toLowerCase()}?translations=true`,
+                    { signal: controller.signal }
+                );
+
+                if (!response.ok) {
+                    throw new Error("Word not found");
+                }
+
                 const data = await response.json();
-                
-                if (data && data.length > 0) {
-                    const entry = data[0].entries[0];
-                    
-                    // Парсинг транскрипций
-                    let uk = '', us = '';
-                    if (entry.pronunciations) {
-                        entry.pronunciations.forEach(p => {
-                            if (p.tags && (p.tags.includes("Received Pronunciation") || p.tags.includes("UK"))) uk = p.text;
-                            if (p.tags && (p.tags.includes("General American") || p.tags.includes("US"))) us = p.text;
-                        });
-                    }
-                    
-                    let transStr = [];
-                    if (uk) transStr.push(`UK: ${uk}`);
-                    if (us) transStr.push(`US: ${us}`);
-                    
-                    transcriptionInput.value = transStr.length > 0 ? transStr.join(' | ') : (entry.pronunciations?.[0]?.text || '');
 
-                    // Дефиниция и контекст
-                    if (entry.senses && entry.senses.length > 0) {
-                        const firstSense = entry.senses[0];
-                        definitionInput.value = firstSense.definition || '';
-                        if (firstSense.examples && firstSense.examples.length > 0) {
-                            contextInput.value = firstSense.examples[0];
-                        }
+                const entry = data?.[0]?.entries?.[0];
+                if (!entry) {
+                    tg.showAlert("Нет данных по этому слову");
+                    return;
+                }
+
+                // --- transcription ---
+                let uk, us;
+
+                entry.pronunciations?.forEach(p => {
+                    if (!p.text) return;
+
+                    if (p.tags?.includes("Received Pronunciation") && !uk) {
+                        uk = p.text;
                     }
 
-                    // Автоперевод на русский (срабатывает, если в URL передан параметр translations=true)
-                    if (autoTranslationsEnabled) {
-                        translationsList = [];
-                        entry.senses.forEach(sense => {
-                            if (sense.translations) {
-                                sense.translations.forEach(t => {
-                                    if (t.language && (t.language.code === 'rus' || t.language.code === 'ru')) {
-                                        if (!translationsList.includes(t.word)) {
-                                            translationsList.push(t.word);
-                                        }
-                                    }
-                                });
+                    if (p.tags?.includes("General American") && !us) {
+                        us = p.text;
+                    }
+                });
+
+                const transParts = [];
+                if (uk) transParts.push(`UK: ${uk}`);
+                if (us) transParts.push(`US: ${us}`);
+
+                transcriptionInput.value =
+                    transParts.length > 0
+                        ? transParts.join(' | ')
+                        : (entry.pronunciations?.[0]?.text || '');
+
+                // --- definition + example ---
+                const firstSense = entry.senses?.[0];
+
+                if (firstSense) {
+                    definitionInput.value = firstSense.definition || '';
+                    contextInput.value =
+                        firstSense.examples?.[0] || '';
+                }
+
+                // --- translations ---
+                if (autoTranslationsEnabled) {
+                    const set = new Set();
+
+                    entry.senses?.forEach(sense => {
+                        sense.translations?.forEach(t => {
+                            const lang = t.language?.code;
+                            if (lang === 'ru' || lang === 'rus') {
+                                if (t.word) set.add(t.word);
                             }
                         });
-                        updateChips();
-                    }
+                    });
+
+                    translationsList = [...set];
+                    updateChips();
                 }
+
+                updateMainButton();
+
             } catch (error) {
-                console.error("Ошибка API:", error);
-                tg.showAlert("Не удалось подтянуть данные. Заполни поля вручную!");
+                console.error(error);
+                tg.showAlert("Ошибка API. Попробуй позже.");
             } finally {
-                // Выключаем лоадер
+                clearTimeout(timeout);
                 btnText.classList.remove('hidden');
                 btnSpinner.style.display = 'none';
             }
         });
 
-        // 5. Обработка клика по нативной кнопке Telegram
-        tg.onEvent('mainButtonClicked', function() {
-            const word = wordInput.value.strip ? wordInput.value.strip() : wordInput.value.trim();
+        // 9. MainButton submit
+        tg.onEvent('mainButtonClicked', () => {
+            const word = wordInput.value.trim();
             const transcription = transcriptionInput.value.trim();
             const definition = definitionInput.value.trim();
             const context = contextInput.value.trim();
 
             if (!word || translationsList.length === 0) {
-                tg.showAlert("Поля 'Слово' и хотя бы один 'Перевод' обязательны!");
+                tg.showAlert("Заполни слово и добавь хотя бы один перевод");
                 return;
             }
 
             const payload = {
-                word: word,
-                transcription: transcription,
-                definition: definition,
+                word,
+                transcription,
+                definition,
                 translations: translationsList,
-                context: context
+                context
             };
 
-            // Отправляем данные в чат бота
             tg.sendData(JSON.stringify(payload));
             tg.close();
         });
+
+        // 10. Live validation
+        wordInput.addEventListener('input', updateMainButton);
     </script>
 </body>
 </html>
