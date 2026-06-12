@@ -9,9 +9,8 @@ from app.db.words import save_new_word
 # Создаем роутер для добавления слов
 add_word_router = Router()
 
-# Ссылка на твой развернутый Web App. 
-# На время локальных тестов сюда можно вставить URL от ngrok или локального Live Server (если тестируешь в тестовом боте)
-WEBAPP_URL = "https://yourdomain.com/add_word.html" 
+# Ссылка на  развернутый Web App. 
+WEBAPP_URL = "https://artemdyrdin.github.io/RememberTheWordBot/add_word.html" 
 
 @add_word_router.message(Command("add"))
 async def command_add_word(message: Message) -> None:
