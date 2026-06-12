@@ -416,6 +416,7 @@
                 debug('SUCCESS', 'UI updated');
 
             } catch (e) {
+                console.log(e)
                 error('FETCH_ERROR', e);
                 tg.showAlert("Ошибка API. Попробуй позже.");
             } finally {
