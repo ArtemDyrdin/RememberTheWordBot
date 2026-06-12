@@ -1,1 +1,1 @@
-# RemeberTheWordBot
+# RememberTheWordBot
