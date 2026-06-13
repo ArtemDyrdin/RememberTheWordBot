@@ -259,61 +259,48 @@
 
             try {
                 const response = await fetch(`https://freedictionaryapi.com/api/v1/entries/en/${word.toLowerCase()}?translations=true`);
-                if (!response.ok) throw new Error("Слово не найдено");
-                
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
                 const data = await response.json();
-                
-                if (data && data.length > 0) {
-                    const entry = data[0].entries[0];
-                    
-                    // Парсинг транскрипций
-                    let uk = '', us = '';
-                    if (entry.pronunciations) {
-                        entry.pronunciations.forEach(p => {
-                            if (p.tags && (p.tags.includes("Received Pronunciation") || p.tags.includes("UK"))) uk = p.text;
-                            if (p.tags && (p.tags.includes("General American") || p.tags.includes("US"))) us = p.text;
-                        });
-                    }
-                    
-                    let transStr = [];
-                    if (uk) transStr.push(`UK: ${uk}`);
-                    if (us) transStr.push(`US: ${us}`);
-                    
-                    transcriptionInput.value = transStr.length > 0 ? transStr.join(' | ') : (entry.pronunciations?.[0]?.text || '');
+                const entry = data.entries[0]; // ← data — объект, не массив!
 
-                    // Дефиниция и контекст
-                    if (entry.senses && entry.senses.length > 0) {
-                        const firstSense = entry.senses[0];
-                        definitionInput.value = firstSense.definition || '';
-                        if (firstSense.examples && firstSense.examples.length > 0) {
-                            contextInput.value = firstSense.examples[0];
-                        }
-                    }
+                // Транскрипция
+                let uk = '', us = '';
+                if (entry.pronunciations) {
+                    entry.pronunciations.forEach(p => {
+                        if (!uk && p.tags?.some(t => t.includes("Received Pronunciation"))) uk = p.text;
+                        if (!us && p.tags?.some(t => t.includes("General American")))      us = p.text;
+                    });
+                }
+                const transStr = [];
+                if (uk) transStr.push(`UK: ${uk}`);
+                if (us) transStr.push(`US: ${us}`);
+                transcriptionInput.value = transStr.length > 0
+                    ? transStr.join(' | ')
+                    : (entry.pronunciations?.[0]?.text || '');
 
-                    // Автоперевод на русский (срабатывает, если в URL передан параметр translations=true)
-                    if (autoTranslationsEnabled) {
-                        translationsList = [];
-                        entry.senses.forEach(sense => {
-                            if (sense.translations) {
-                                sense.translations.forEach(t => {
-                                    if (t.language && (t.language.code === 'rus' || t.language.code === 'ru')) {
-                                        if (!translationsList.includes(t.word)) {
-                                            translationsList.push(t.word);
-                                        }
-                                    }
-                                });
+                // Дефиниция и пример
+                const firstSense = entry.senses?.[0];
+                if (firstSense?.definition) definitionInput.value = firstSense.definition;
+                if (firstSense?.examples?.[0]) contextInput.value = firstSense.examples[0];
+
+                // Переводы на русский
+                if (autoTranslationsEnabled) {
+                    translationsList = [];
+                    entry.senses.forEach(sense => {
+                        sense.translations?.forEach(t => {
+                            if ((t.language?.code === 'rus' || t.language?.code === 'ru')
+                                && !translationsList.includes(t.word)) {
+                                translationsList.push(t.word);
                             }
                         });
-                        updateChips();
-                    }
+                    });
+                    updateChips();
                 }
+
             } catch (e) {
-                console.error("========== FETCH ERROR ==========");
-                console.error("Message:", e.message);
-                console.error("Name:", e.name);
-                console.error("Stack:", e.stack);
-                console.error("Object:", e);
-                // tg.showAlert("Не удалось подтянуть данные. Заполни поля вручную!");
+                console.error(e);
+                tg.showAlert(`Ошибка: ${e.message}`);
             } finally {
                 // Выключаем лоадер
                 btnText.classList.remove('hidden');
