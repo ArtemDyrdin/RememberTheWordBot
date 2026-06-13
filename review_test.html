@@ -15,6 +15,7 @@
             --secondary-bg-color: var(--tg-theme-secondary-bg-color, #ffffff);
             --border-radius: 14px;
             --transition: all 0.2s ease;
+           
             --color-success: #34c759;
             --color-error: #ff3b30;
         }
@@ -73,6 +74,7 @@
             color: var(--text-color);
             font-size: 16px;
             outline: none;
+            box-sizing: border-box;
         }
         .tg-theme-dark .input-group input {
             border: 1px solid rgba(255, 255, 255, 0.15);
@@ -87,20 +89,7 @@
             font-weight: 600;
             cursor: pointer;
         }
-        .context-btn {
-            background: none;
-            border: none;
-            color: var(--button-color);
-            font-size: 14px;
-            cursor: pointer;
-            padding: 0;
-            margin-bottom: 8px;
-            display: inline-flex;
-            align-items: center;
-            font-weight: 500;
-        }
         .context-text {
-            display: none;
             font-size: 14px;
             font-style: italic;
             color: var(--text-color);
@@ -108,7 +97,7 @@
             padding: 10px 14px;
             border-radius: 8px;
             border-left: 3px solid var(--hint-color);
-            margin-bottom: 12px;
+            margin-top: 12px;
             line-height: 1.4;
         }
         .result-info {
@@ -152,10 +141,10 @@
 
         const urlParams = new URLSearchParams(window.location.search);
         const rawData = urlParams.get('data');
-        
+       
         let wordsArray = [];
 
-        // === ТЕСТОВЫЕ СЛОВА (для локального тестирования) ===
+        // === ТЕСТОВЫЕ СЛОВА ===
         const testWords = [
             {
                 id: 1,
@@ -180,7 +169,6 @@
             }
         ];
 
-        // Если data пришла из Telegram — используем её, иначе — тестовые слова
         try {
             if (rawData) {
                 wordsArray = JSON.parse(decodeURIComponent(rawData));
@@ -190,7 +178,7 @@
                 console.log("Используются тестовые слова");
             }
         } catch (e) {
-            console.error("Ошибка парсинга данных:", e);
+            console.error("Ошибка парсинга входящих слов:", e);
             wordsArray = testWords;
         }
 
@@ -221,13 +209,10 @@
                 card.id = `card-${item.id}`;
                 
                 const translationsStr = item.translations.join(', ');
-                
+
                 card.innerHTML = `
                     <div class="translations-list">${translationsStr}</div>
-                    ${item.context ? `
-                        <button class="context-btn" onclick="toggleContext(${item.id})">💡 Показать контекст</button>
-                        <div class="context-text" id="context-${item.id}">${item.context}</div>
-                    ` : ''}
+                    
                     <div class="input-group" id="input-group-${item.id}">
                         <input type="text" id="input-${item.id}" placeholder="Введи ответ на английском" autocomplete="off">
                         <button class="btn-check" onclick="checkAnswer(${item.id})">Проверить</button>
@@ -237,11 +222,6 @@
                 container.appendChild(card);
             });
         }
-
-        window.toggleContext = function(id) {
-            const contextDiv = document.getElementById(`context-${id}`);
-            contextDiv.style.display = contextDiv.style.display === 'block' ? 'none' : 'block';
-        };
 
         window.checkAnswer = function(id) {
             const wordData = wordsArray.find(w => w.id === id);
@@ -263,17 +243,36 @@
 
             inputGroup.style.display = 'none';
 
+            let resultHTML = '';
+
             if (isCorrect) {
                 cardBlock.className = 'word-card card-success';
-                resultBlock.className = 'result-info result-success';
-                resultBlock.innerHTML = `✓ Правильно! <span class="correct-answer">${wordData.word}</span> <span class="transcription-text">${wordData.transcription || ''}</span>`;
+                resultHTML = `
+                    <span class="result-success">✓ Правильно!</span> 
+                    <span class="correct-answer">${wordData.word}</span> 
+                    <span class="transcription-text">${wordData.transcription || ''}</span>
+                `;
             } else {
                 cardBlock.className = 'word-card card-error';
-                resultBlock.className = 'result-info result-error';
-                resultBlock.innerHTML = `✕ Ошибка. Правильный ответ: <span class="correct-answer">${wordData.word}</span> <span class="transcription-text">${wordData.transcription || ''}</span>`;
+                resultHTML = `
+                    <span class="result-error">✕ Ошибка.</span> 
+                    Правильный ответ: <span class="correct-answer">${wordData.word}</span> 
+                    <span class="transcription-text">${wordData.transcription || ''}</span>
+                `;
             }
-            
+
+            // Контекст показывается после ответа
+            if (wordData.context) {
+                resultHTML += `
+                    <div class="context-text" style="display: block;">
+                        <strong>Контекст:</strong><br>${wordData.context}
+                    </div>
+                `;
+            }
+
+            resultBlock.innerHTML = resultHTML;
             resultBlock.style.display = 'block';
+
             updateMainButtonStatus();
         };
 
@@ -286,7 +285,7 @@
         tg.onEvent('mainButtonClicked', function() {
             const checkedCount = Object.values(reviewResults).filter(v => v !== null).length;
             if (checkedCount < wordsArray.length) {
-                tg.showConfirm("Ты проверил не все слова. Непроверенные слова не засчитаются. Завершить?", function(confirmed) {
+                tg.showConfirm("Ты проверил не все слова. Непроверенные слова не засчитаются. Все равно завершить?", function(confirmed) {
                     if (confirmed) sendResultsToBot();
                 });
             } else {
@@ -297,9 +296,11 @@
         function sendResultsToBot() {
             const finalPayload = {};
             for (const [key, value] of Object.entries(reviewResults)) {
-                if (value !== null) finalPayload[key] = value;
+                if (value !== null) {
+                    finalPayload[key] = value;
+                }
             }
-            console.log("Результаты:", finalPayload);
+            console.log("Отправляем результаты:", finalPayload);
             tg.sendData(JSON.stringify(finalPayload));
             tg.close();
         }
