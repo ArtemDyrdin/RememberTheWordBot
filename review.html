@@ -90,7 +90,6 @@
             cursor: pointer;
         }
         .context-text {
-            display: none;
             font-size: 14px;
             font-style: italic;
             color: var(--text-color);
@@ -145,10 +144,41 @@
        
         let wordsArray = [];
 
+        // Тестовые слова (для локального тестирования)
+        const testWords = [
+            {
+                id: 1,
+                word: "serendipity",
+                translations: ["случайная удача", "везение"],
+                transcription: "/ˌser.ənˈdɪp.ə.ti/",
+                context: "Finding that old photo was pure serendipity."
+            },
+            {
+                id: 2,
+                word: "ephemeral",
+                translations: ["эфемерный", "недолговечный"],
+                transcription: "/ɪˈfem.ər.əl/",
+                context: "Fame in social media is often ephemeral."
+            },
+            {
+                id: 3,
+                word: "resilient",
+                translations: ["устойчивый", "стойкий"],
+                transcription: "/rɪˈzɪl.i.ənt/",
+                context: "She is a very resilient person after everything she's been through."
+            }
+        ];
+
         try {
-            wordsArray = JSON.parse(decodeURIComponent(rawData));
+            if (rawData) {
+                wordsArray = JSON.parse(decodeURIComponent(rawData));
+                console.log("Загружены слова из Telegram");
+            } else {
+                wordsArray = testWords;   // ← используем тестовые слова при локальном открытии
+            }
         } catch (e) {
             console.error("Ошибка парсинга входящих слов:", e);
+            wordsArray = testWords;
         }
 
         const container = document.getElementById('words-container');
@@ -157,6 +187,7 @@
 
         let reviewResults = {};
 
+        // Проверка на отсутствие слов
         if (wordsArray.length === 0) {
             container.style.display = 'none';
             sessionTitle.style.display = 'none';
@@ -210,28 +241,13 @@
             const isCorrect = (userAnswer === correctAnswer);
             reviewResults[id] = isCorrect;
 
-            // Скрываем поле ввода
             inputGroup.style.display = 'none';
 
-            let resultHTML = '';
+            let resultHTML = isCorrect 
+                ? `<span class="result-success">✓ Правильно!</span> <span class="correct-answer">${wordData.word}</span> <span class="transcription-text">${wordData.transcription || ''}</span>`
+                : `<span class="result-error">✕ Ошибка.</span> Правильный ответ: <span class="correct-answer">${wordData.word}</span> <span class="transcription-text">${wordData.transcription || ''}</span>`;
 
-            if (isCorrect) {
-                cardBlock.className = 'word-card card-success';
-                resultHTML = `
-                    <span class="result-success">✓ Правильно!</span> 
-                    <span class="correct-answer">${wordData.word}</span> 
-                    <span class="transcription-text">${wordData.transcription || ''}</span>
-                `;
-            } else {
-                cardBlock.className = 'word-card card-error';
-                resultHTML = `
-                    <span class="result-error">✕ Ошибка.</span> 
-                    Правильный ответ: <span class="correct-answer">${wordData.word}</span> 
-                    <span class="transcription-text">${wordData.transcription || ''}</span>
-                `;
-            }
-
-            // Добавляем контекст после ответа
+            // Контекст показывается после ответа
             if (wordData.context) {
                 resultHTML += `
                     <div class="context-text" style="display: block;">
@@ -255,7 +271,7 @@
         tg.onEvent('mainButtonClicked', function() {
             const checkedCount = Object.values(reviewResults).filter(v => v !== null).length;
             if (checkedCount < wordsArray.length) {
-                tg.showConfirm("Ты проверил не все слова. Непроверенные слова не засчитаются в интервальное повторение. Все равно завершить?", function(confirmed) {
+                tg.showConfirm("Ты проверил не все слова. Непроверенные слова не засчитаются. Все равно завершить?", function(confirmed) {
                     if (confirmed) sendResultsToBot();
                 });
             } else {
@@ -266,10 +282,9 @@
         function sendResultsToBot() {
             const finalPayload = {};
             for (const [key, value] of Object.entries(reviewResults)) {
-                if (value !== null) {
-                    finalPayload[key] = value;
-                }
+                if (value !== null) finalPayload[key] = value;
             }
+            console.log("Отправляем результаты:", finalPayload);
             tg.sendData(JSON.stringify(finalPayload));
             tg.close();
         }
