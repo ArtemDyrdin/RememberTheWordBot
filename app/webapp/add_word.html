@@ -307,9 +307,13 @@
                         updateChips();
                     }
                 }
-            } catch (error) {
-                console.error("Ошибка API:", error);
-                tg.showAlert("Не удалось подтянуть данные. Заполни поля вручную!");
+            } catch (e) {
+                console.error("========== FETCH ERROR ==========");
+                console.error("Message:", e.message);
+                console.error("Name:", e.name);
+                console.error("Stack:", e.stack);
+                console.error("Object:", e);
+                // tg.showAlert("Не удалось подтянуть данные. Заполни поля вручную!");
             } finally {
                 // Выключаем лоадер
                 btnText.classList.remove('hidden');
