@@ -145,40 +145,10 @@
        
         let wordsArray = [];
 
-        // Тестовые слова для локального тестирования
-        const testWords = [
-            {
-                id: 1,
-                word: "serendipity",
-                translations: ["случайная удача", "везение"],
-                transcription: "/ˌser.ənˈdɪp.ə.ti/",
-                context: "Finding that old photo was pure serendipity."
-            },
-            {
-                id: 2,
-                word: "ephemeral",
-                translations: ["эфемерный", "недолговечный"],
-                transcription: "/ɪˈfem.ər.əl/",
-                context: "Fame in social media is often ephemeral."
-            },
-            {
-                id: 3,
-                word: "resilient",
-                translations: ["устойчивый", "стойкий"],
-                transcription: "/rɪˈzɪl.i.ənt/",
-                context: "She is a very resilient person after everything she's been through."
-            }
-        ];
-
         try {
-            if (rawData) {
-                wordsArray = JSON.parse(decodeURIComponent(rawData));
-            } else {
-                wordsArray = testWords;
-            }
+            wordsArray = JSON.parse(decodeURIComponent(rawData));
         } catch (e) {
             console.error("Ошибка парсинга входящих слов:", e);
-            wordsArray = testWords;
         }
 
         const container = document.getElementById('words-container');
