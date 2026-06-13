@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Повторение слов</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --bg-color: var(--tg-theme-bg-color, #f4f5f7);
+            --text-color: var(--tg-theme-text-color, #000000);
+            --hint-color: var(--tg-theme-hint-color, #8e8e93);
+            --button-color: var(--tg-theme-button-color, #248bcf);
+            --button-text-color: var(--tg-theme-button-text-color, #ffffff);
+            --secondary-bg-color: var(--tg-theme-secondary-bg-color, #ffffff);
+            --border-radius: 14px;
+            --transition: all 0.2s ease;
+            
+            /* Цвета для валидации ответов */
+            --color-success: #34c759;
+            --color-error: #ff3b30;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 16px;
+            box-sizing: border-box;
+            font-size: 16px;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        h3 {
+            margin-top: 0;
+            margin-bottom: 12px;
+            font-size: 15px;
+            color: var(--hint-color);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .word-card {
+            background-color: var(--secondary-bg-color);
+            border-radius: var(--border-radius);
+            padding: 20px;
+            margin-bottom: 16px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+            border: 2px solid transparent;
+            transition: var(--transition);
+        }
+
+        /* Состояния валидации карточки */
+        .card-success {
+            border-color: var(--color-success);
+            background-color: rgba(52, 199, 89, 0.03);
+        }
+        .card-error {
+            border-color: var(--color-error);
+            background-color: rgba(255, 59, 48, 0.03);
+        }
+
+        .translations-list {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 14px;
+            line-height: 1.3;
+        }
+
+        /* Поле ввода английского варианта */
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .input-group input {
+            flex: 1;
+            padding: 12px 14px;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-size: 16px;
+            outline: none;
+            box-sizing: border-box;
+        }
+
+        .tg-theme-dark .input-group input {
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        .btn-check {
+            background-color: var(--button-color);
+            color: var(--button-text-color);
+            border: none;
+            border-radius: 10px;
+            padding: 0 16px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        /* Элементы контекста */
+        .context-btn {
+            background: none;
+            border: none;
+            color: var(--button-color);
+            font-size: 14px;
+            cursor: pointer;
+            padding: 0;
+            margin-bottom: 8px;
+            display: inline-flex;
+            align-items: center;
+            font-weight: 500;
+        }
+
+        .context-text {
+            display: none;
+            font-size: 14px;
+            font-style: italic;
+            color: var(--text-color);
+            background-color: rgba(0, 0, 0, 0.02);
+            padding: 10px 14px;
+            border-radius: 8px;
+            border-left: 3px solid var(--hint-color);
+            margin-bottom: 12px;
+            line-height: 1.4;
+        }
+
+        /* Блок результата внутри карточки */
+        .result-info {
+            display: none;
+            font-size: 15px;
+            margin-top: 8px;
+            font-weight: 500;
+        }
+        
+        .result-success { color: var(--color-success); }
+        .result-error { color: var(--color-error); }
+
+        .correct-answer {
+            font-weight: 700;
+            font-size: 16px;
+        }
+
+        .transcription-text {
+            color: var(--hint-color);
+            font-size: 14px;
+            font-weight: normal;
+            margin-left: 5px;
+        }
+
+        #no-words-message {
+            text-align: center;
+            color: var(--hint-color);
+            margin-top: 40px;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+
+    <h3 id="session-title">Слова на повторение</h3>
+    
+    <div id="words-container"></div>
+
+    <div id="no-words-message" style="display: none;">
+        🎉 Отлично! На сегодня все слова повторены.
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        // Считываем JSON-строку со списком слов, которую бот передаст в URL-параметре `?data=...`
+        const urlParams = new URLSearchParams(window.location.search);
+        const rawData = urlParams.get('data');
+        
+        let wordsArray = [];
+        // Объект, где будем хранить вердикты: { word_id: true/false }
+        let reviewResults = {};
+
+        try {
+            if (rawData) {
+                // Декодируем URI и парсим переданный массив слов
+                wordsArray = JSON.parse(decodeURIComponent(rawData));
+            }
+        } catch (e) {
+            console.error("Ошибка парсинга входящих слов:", e);
+        }
+
+        const container = document.getElementById('words-container');
+        const noWordsMessage = document.getElementById('no-words-message');
+        const sessionTitle = document.getElementById('session-title');
+
+        if (wordsArray.length === 0) {
+            container.style.display = 'none';
+            sessionTitle.style.display = 'none';
+            noWordsMessage.style.display = 'block';
+            tg.MainButton.hide();
+        } else {
+            // Настраиваем Главную Кнопку Telegram для завершения сессии
+            tg.MainButton.setText(`ЗАВЕРШИТЬ ПОВТОРЕНИЕ (0/${wordsArray.length})`);
+            tg.MainButton.show();
+            renderCards();
+        }
+
+        // Генерация интерфейса списка слов
+        function renderCards() {
+            container.innerHTML = '';
+            
+            wordsArray.forEach((item) => {
+                // Инициализируем статус слова как "не пройдено" (null)
+                reviewResults[item.id] = null;
+
+                const card = document.createElement('div');
+                card.className = 'word-card';
+                card.id = `card-${item.id}`;
+
+                // Объединяем массив русских переводов в читаемую строку
+                const translationsStr = item.translations.join(', ');
+
+                card.innerHTML = `
+                    <div class="translations-list">${translationsStr}</div>
+                    
+                    ${item.context ? `
+                        <button class="context-btn" onclick="toggleContext(${item.id})">💡 Показать контекст</button>
+                        <div class="context-text" id="context-${item.id}">${item.context}</div>
+                    ` : ''}
+
+                    <div class="input-group" id="input-group-${item.id}">
+                        <input type="text" id="input-${item.id}" placeholder="Введи ответ на английском" autocomplete="off" @keydown.enter="checkAnswer(${item.id})">
+                        <button class="btn-check" onclick="checkAnswer(${item.id})">Проверить</button>
+                    </div>
+
+                    <div class="result-info" id="result-${item.id}"></div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // Функция переключения видимости контекста
+        window.toggleContext = function(id) {
+            const contextDiv = document.getElementById(`context-${id}`);
+            if (contextDiv.style.display === 'block') {
+                contextDiv.style.display = 'none';
+            } else {
+                contextDiv.style.display = 'block';
+            }
+        };
+
+        // Логика проверки конкретного слова
+        window.checkAnswer = function(id) {
+            const wordData = wordsArray.find(w => w.id === id);
+            const inputField = document.getElementById(`input-${id}`);
+            const cardBlock = document.getElementById(`card-${id}`);
+            const inputGroup = document.getElementById(`input-group-${id}`);
+            const resultBlock = document.getElementById(`result-${id}`);
+
+            const userAnswer = inputField.value.trim().toLowerCase();
+            const correctAnswer = wordData.word.trim().toLowerCase();
+
+            if (!userAnswer) {
+                tg.showAlert("Поле ответа не может быть пустым!");
+                return;
+            }
+
+            // Сравнение ответа
+            const isCorrect = (userAnswer === correctAnswer);
+            reviewResults[id] = isCorrect;
+
+            // Блокируем инпуты, чтобы нельзя было переответить
+            inputGroup.style.display = 'none';
+
+            // Меняем стили карточки в зависимости от ответа
+            if (isCorrect) {
+                cardBlock.className = 'word-card card-success';
+                resultBlock.className = 'result-info result-success';
+                resultBlock.style.display = 'block';
+                resultBlock.innerHTML = `<span>✓ Правильно!</span> <span class="correct-answer">${wordData.word}</span> <span class="transcription-text">${wordData.transcription || ''}</span>`;
+            } else {
+                cardBlock.className = 'word-card card-error';
+                resultBlock.className = 'result-info result-error';
+                resultBlock.style.display = 'block';
+                resultBlock.innerHTML = `<span>✕ Ошибка.</span> Правильный ответ: <span class="correct-answer">${wordData.word}</span> <span class="transcription-text">${wordData.transcription || ''}</span>`;
+            }
+
+            updateMainButtonStatus();
+        };
+
+        // Обновление счетчика проверенных слов на главной кнопке Telegram
+        function updateMainButtonStatus() {
+            const total = wordsArray.length;
+            const checkedCount = Object.values(reviewResults).filter(v => v !== null).length;
+            
+            tg.MainButton.setText(`ЗАВЕРШИТЬ ПОВТОРЕНИЕ (${checkedCount}/${total})`);
+        }
+
+        // Обработка клика по нативной кнопке «ЗАВЕРШИТЬ ПОВТОРЕНИЕ»
+        tg.onEvent('mainButtonClicked', function() {
+            const total = wordsArray.length;
+            const checkedCount = Object.values(reviewResults).filter(v => v !== null).length;
+
+            // Если пользователь проверил не все слова, предупреждаем его
+            if (checkedCount < total) {
+                tg.showConfirm("Ты проверил не все слова. Непроверенные слова не засчитаются в интервальное повторение. Все равно завершить?", function(confirmed) {
+                    if (confirmed) {
+                        sendResultsToBot();
+                    }
+                });
+            } else {
+                sendResultsToBot();
+            }
+        });
+
+        function sendResultsToBot() {
+            // Очищаем массив результатов от непроверенных элементов (null)
+            const finalPayload = {};
+            for (const [key, value] of Object.entries(reviewResults)) {
+                if (value !== null) {
+                    finalPayload[key] = value;
+                }
+            }
+
+            // Отправляем объект вида { "1": true, "2": false } обратно боту
+            tg.sendData(JSON.stringify(finalPayload));
+            tg.close();
+        }
+    </script>
+</body>
+</html>
