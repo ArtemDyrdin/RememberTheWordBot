@@ -27,7 +27,7 @@ async def command_add_word(message: Message) -> None:
     )
 
 
-@add_word_router.message(F.web_app_data.data.func(lambda d: json.loads(d).get("type") == "add_word"))
+@add_word_router.message(F.web_app_data, lambda msg: json.loads(msg.web_app_data.data).get("action") == "add")
 async def handle_web_app_data(message: Message) -> None:
     """
     Ловит данные, отправленные из Mini App через Telegram.WebApp.sendData()

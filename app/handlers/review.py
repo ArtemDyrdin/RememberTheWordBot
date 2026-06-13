@@ -66,16 +66,12 @@ async def command_review_words(message: Message) -> None:
         await message.answer("❌ Произошла ошибка при генерации сессии повторения.")
 
 
-@review_router.message(F.web_app_data.data.func(lambda d: json.loads(d).get("type") == "review"))
+@review_router.message(F.web_app_data, lambda msg: json.loads(msg.web_app_data.data).get("action") == "review")
 async def handle_review_results(message: Message) -> None:
-    """
-    Принимает финальный вердикт из review.html вида: {"12": true, "15": false}
-    и пачкой обновляет их через алгоритм SM-2 в СУБД.
-    """
+    logging.info(f"Получены данные из Web App Повторений: {message.web_app_data.data}")
     raw_data = message.web_app_data.data
     
     try:
-        # Парсим прилетевший JSON (ключи приходят как строки из-за специфики JS Object)
         results = json.loads(raw_data)
         
         if not results:
@@ -83,33 +79,35 @@ async def handle_review_results(message: Message) -> None:
             return
 
         correct_count = 0
-        total_count = len(results)
+        actual_words_count = 0
 
-        # Перебираем результаты и обновляем каждое слово в базе
+        # Перебираем результаты
         for word_id_str, is_correct in results.items():
+            # Если наткнулись на служебный маркер, просто пропускаем его
+            if word_id_str == "action":
+                continue
+                
             word_id = int(word_id_str)
+            actual_words_count += 1
             
-            # Наш CRUD-метод сам пересчитает SM-2, обновит next_review и запишет лог
+            # Обновляем в БД
             await update_word_after_review(word_id=word_id, is_correct=is_correct)
             
             if is_correct:
                 correct_count += 1
 
-        # Текстовый итог сессии пользователю
-        wrong_count = total_count - correct_count
+        # Формируем итоговую статистику
+        wrong_count = actual_words_count - correct_count
         summary_text = (
             f"🏁 {html.bold('Сессия повторения успешно завершена!')}\n\n"
             f"📊 {html.bold('Твои результаты:')}\n"
             f"✅ Правильно: {html.underline(correct_count)}\n"
             f"❌ Ошибок: {html.underline(wrong_count)}\n\n"
-            f"Алгоритм SM-2 пересчитал таймеры. Следующие интервалы зависят от твоих ответов!"
+            f"Интервалы повторения обновлены!"
         )
         
         await message.answer(summary_text)
 
-    except json.JSONDecodeError:
-        logging.error(f"Failed to decode review Web App data: {raw_data}")
-        await message.answer("❌ Ошибка при чтении результатов сессии.")
     except Exception as e:
         logging.error(f"Error while processing review results: {e}")
         await message.answer("❌ Не удалось сохранить прогресс повторения.")

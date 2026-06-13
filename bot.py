@@ -15,6 +15,8 @@ from app.handlers.start import core_router
 from app.handlers.add_word import add_word_router
 from app.handlers.review import review_router
 
+from app.scheduler import setup_scheduler
+
 
 BOT_TOKEN = settings.BOT_TOKEN
 
@@ -35,9 +37,16 @@ async def main() -> None:
     dp.include_router(add_word_router)
     dp.include_router(review_router)
 
-    # 4. Запускаем бота
-    logging.info("Запуск бота...")
-    await dp.start_polling(bot)
+    # 4. Настраиваем и запускаем планировщик и бота
+    scheduler = setup_scheduler(bot)
+    scheduler.start()
+    logging.info("APScheduler успешно запущен.")
+    try:
+        logging.info("Запуск бота...")
+        await dp.start_polling(bot)
+    finally:
+        scheduler.shutdown()
+        await bot.session.close()
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)

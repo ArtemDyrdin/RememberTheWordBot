@@ -159,3 +159,23 @@ async def update_word_after_review(word_id: int, is_correct: bool) -> None:
             # Если что-то пойдет не так, откатываем всю транзакцию
             await db.rollback()
             raise e
+        
+async def get_all_users_expired_words_count() -> dict[int, int]:
+    """
+    Возвращает словарь, где ключ — telegram_id пользователя,
+    а значение — количество слов, у которых next_review <= текущей даты.
+    Используется планировщиком для рассылки пушей.
+    """
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    query = """
+    SELECT user_id, COUNT(*) as expired_count
+    FROM words
+    WHERE next_review <= ?
+    GROUP BY user_id;
+    """
+    
+    async with get_db() as db:
+        async with db.execute(query, (now,)) as cursor:
+            rows = await cursor.fetchall()
+            return {row['user_id']: row['expired_count'] for row in rows}
