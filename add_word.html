@@ -262,7 +262,7 @@
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
                 const data = await response.json();
-                const entry = data.entries[0]; // ← data — объект, не массив!
+                const entry = data.entries[0];
 
                 // Транскрипция
                 let uk = '', us = '';
@@ -285,18 +285,16 @@
                 if (firstSense?.examples?.[0]) contextInput.value = firstSense.examples[0];
 
                 // Переводы на русский
-                if (autoTranslationsEnabled) {
-                    translationsList = [];
-                    entry.senses.forEach(sense => {
-                        sense.translations?.forEach(t => {
-                            if ((t.language?.code === 'rus' || t.language?.code === 'ru')
-                                && !translationsList.includes(t.word)) {
-                                translationsList.push(t.word);
-                            }
-                        });
+                translationsList = [];
+                entry.senses.forEach(sense => {
+                    sense.translations?.forEach(t => {
+                        if ((t.language?.code === 'rus' || t.language?.code === 'ru')
+                            && !translationsList.includes(t.word)) {
+                            translationsList.push(t.word);
+                        }
                     });
-                    updateChips();
-                }
+                });
+                updateChips();
 
             } catch (e) {
                 console.error(e);
