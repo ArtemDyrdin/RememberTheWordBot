@@ -1,7 +1,7 @@
 import json
 import logging
 from aiogram import Router, F, html
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
 from aiogram.filters import Command
 
 from app.db.words import save_new_word
@@ -14,22 +14,15 @@ WEBAPP_URL = "https://artemdyrdin.github.io/RememberTheWordBot/add_word.html"
 
 @add_word_router.message(Command("add"))
 async def command_add_word(message: Message) -> None:
-    """
-    Отправляет инлайн-кнопку, которая открывает Mini App для добавления слова.
-    """
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="➕ Добавить слово",
-                    web_app=WebAppInfo(url=WEBAPP_URL)
-                )
-            ]
-        ]
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="➕ Добавить слово", web_app=WebAppInfo(url=WEBAPP_URL))]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
     )
-    
     await message.answer(
-        "Нажми на кнопку ниже, чтобы открыть карточку добавления нового слова:",
+        "Нажмите на кнопку ниже для добавления нового слова:",
         reply_markup=keyboard
     )
 
@@ -40,6 +33,7 @@ async def handle_web_app_data(message: Message) -> None:
     Ловит данные, отправленные из Mini App через Telegram.WebApp.sendData()
     """
     user_id = message.from_user.id
+    logging.info(f"Получены данные из Web App: {message.web_app_data.data}")
     raw_data = message.web_app_data.data
     
     try:

@@ -1,5 +1,7 @@
 from app.db.connection import get_db
 import datetime
+from app.db.connection import get_db
+from app.services.srs import SRSService
 
 async def save_new_word(
     user_id: int, 
@@ -56,3 +58,90 @@ async def save_new_word(
             # В случае любой ошибки транзакция откатится, если мы вызовем rollback явным образом
             await db.rollback()
             raise e
+        
+async def get_words_for_review(user_id: int) -> list[dict]:
+    """
+    Выбирает все слова пользователя, у которых время next_review меньше или равно текущему.
+    Возвращает список слов вместе с их переводами и контекстом.
+    """
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    query = """
+    SELECT id, word, transcription, repeat_count, ease_factor 
+    FROM words 
+    WHERE user_id = ? AND next_review <= ?
+    ORDER BY next_review ASC;
+    """
+    
+    async with get_db() as db:
+        async with db.execute(query, (user_id, now)) as cursor:
+            rows = await cursor.fetchall()
+            words_list = []
+            
+            for row in rows:
+                word_id = row['id']
+                
+                # Достаем переводы для этого слова
+                async with db.execute("SELECT translation FROM translations WHERE word_id = ?", (word_id,)) as t_cursor:
+                    translations = [t['translation'] for t in await t_cursor.fetchall()]
+                
+                # Достаем контекст (может быть пустым)
+                async with db.execute("SELECT context_text FROM contexts WHERE word_id = ? LIMIT 1", (word_id,)) as c_cursor:
+                    context_row = await c_cursor.fetchone()
+                    context = context_row['context_text'] if context_row else None
+                
+                words_list.append({
+                    "id": word_id,
+                    "word": row['word'],
+                    "transcription": row['transcription'],
+                    "repeat_count": row['repeat_count'],
+                    "ease_factor": row['ease_factor'],
+                    "translations": translations,
+                    "context": context
+                })
+                
+            return words_list
+
+async def update_word_after_review(word_id: int, is_correct: bool) -> None:
+    """
+    Достает текущие метрики слова, пересчитывает их через SM-2 и обновляет запись в БД.
+    """
+    async with get_db() as db:
+        # 1. Получаем текущие данные слова
+        async with db.execute("SELECT repeat_count, ease_factor FROM words WHERE id = ?", (word_id,)) as cursor:
+            row = await cursor.fetchone()
+            if not row:
+                return
+            
+            current_repeat_count = row['repeat_count']
+            current_ease_factor = row['ease_factor']
+
+        # 2. Считаем новые параметры через сервис алгоритма
+        new_repeat, new_ease, next_review_dt = SRSService.calculate_next_review(
+            current_repeat_count=current_repeat_count,
+            current_ease_factor=current_ease_factor,
+            is_correct=is_correct
+        )
+        
+        next_review_str = next_review_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+        # 3. Обновляем таблицу words
+        update_query = """
+        UPDATE words 
+        SET repeat_count = ?, ease_factor = ?, next_review = ? 
+        WHERE id = ?;
+        """
+        await db.execute(update_query, (new_repeat, new_ease, next_review_str, word_id))
+        
+        # 4. Логируем это действие в review_log для статистики
+        log_query = """
+        INSERT INTO review_log (word_id, user_id, quality, interval_days)
+        SELECT ?, user_id, ?, ? FROM words WHERE id = ?;
+        """
+        # В качестве quality запишем 5 (если правильно) или 1 (если ошибка) для совместимости со схемой логирования
+        quality = 5 if is_correct else 1
+        interval_days = int((next_review_dt - datetime.datetime.now()).days)
+        if interval_days == 0: 
+            interval_days = 1 # Округляем 0.5 дня до 1 для логов типа INTEGER
+            
+        await db.execute(log_query, (word_id, quality, interval_days, word_id))
