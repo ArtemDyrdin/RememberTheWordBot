@@ -13,6 +13,7 @@ from app.config import settings
 from app.db.init_db import init_database
 from app.handlers.start import core_router
 from app.handlers.add_word import add_word_router
+from app.handlers.review import review_router
 
 
 BOT_TOKEN = settings.BOT_TOKEN
@@ -32,6 +33,7 @@ async def main() -> None:
     # 3. Регистрируем роутеры
     dp.include_router(core_router)
     dp.include_router(add_word_router)
+    dp.include_router(review_router)
 
     # 4. Запускаем бота
     logging.info("Запуск бота...")

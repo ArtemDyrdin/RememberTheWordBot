@@ -2,6 +2,7 @@ from app.db.connection import get_db
 import datetime
 from app.db.connection import get_db
 from app.services.srs import SRSService
+import logging
 
 async def save_new_word(
     user_id: int, 
@@ -104,44 +105,57 @@ async def get_words_for_review(user_id: int) -> list[dict]:
 
 async def update_word_after_review(word_id: int, is_correct: bool) -> None:
     """
-    Достает текущие метрики слова, пересчитывает их через SM-2 и обновляет запись в БД.
+    Достает текущие метрики слова, пересчитывает их через SM-2,
+    обновляет запись в БД и пишет лог в review_log.
     """
     async with get_db() as db:
-        # 1. Получаем текущие данные слова
-        async with db.execute("SELECT repeat_count, ease_factor FROM words WHERE id = ?", (word_id,)) as cursor:
-            row = await cursor.fetchone()
-            if not row:
-                return
-            
-            current_repeat_count = row['repeat_count']
-            current_ease_factor = row['ease_factor']
+        try:
+            # 1. Получаем текущие данные слова и user_id
+            async with db.execute(
+                "SELECT user_id, repeat_count, ease_factor FROM words WHERE id = ?", 
+                (word_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+                if not row:
+                    logging.warning(f"Слово с ID {word_id} не найдено в базе при обновлении.")
+                    return
+                
+                user_id = row['user_id']
+                current_repeat_count = row['repeat_count']
+                current_ease_factor = row['ease_factor']
 
-        # 2. Считаем новые параметры через сервис алгоритма
-        new_repeat, new_ease, next_review_dt = SRSService.calculate_next_review(
-            current_repeat_count=current_repeat_count,
-            current_ease_factor=current_ease_factor,
-            is_correct=is_correct
-        )
-        
-        next_review_str = next_review_dt.strftime("%Y-%m-%d %H:%M:%S")
-
-        # 3. Обновляем таблицу words
-        update_query = """
-        UPDATE words 
-        SET repeat_count = ?, ease_factor = ?, next_review = ? 
-        WHERE id = ?;
-        """
-        await db.execute(update_query, (new_repeat, new_ease, next_review_str, word_id))
-        
-        # 4. Логируем это действие в review_log для статистики
-        log_query = """
-        INSERT INTO review_log (word_id, user_id, quality, interval_days)
-        SELECT ?, user_id, ?, ? FROM words WHERE id = ?;
-        """
-        # В качестве quality запишем 5 (если правильно) или 1 (если ошибка) для совместимости со схемой логирования
-        quality = 5 if is_correct else 1
-        interval_days = int((next_review_dt - datetime.datetime.now()).days)
-        if interval_days == 0: 
-            interval_days = 1 # Округляем 0.5 дня до 1 для логов типа INTEGER
+            # 2. Считаем новые параметры через сервис алгоритма
+            new_repeat, new_ease, next_review_dt = SRSService.calculate_next_review(
+                current_repeat_count=current_repeat_count,
+                current_ease_factor=current_ease_factor,
+                is_correct=is_correct
+            )
             
-        await db.execute(log_query, (word_id, quality, interval_days, word_id))
+            next_review_str = next_review_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+            # 3. Обновляем таблицу words (строго нужные поля, не трогая word)
+            update_query = """
+            UPDATE words 
+            SET repeat_count = ?, ease_factor = ?, next_review = ? 
+            WHERE id = ?;
+            """
+            await db.execute(update_query, (new_repeat, new_ease, next_review_str, word_id))
+            
+            # 4. Пишем лог в review_log абсолютно изолированно
+            log_query = """
+            INSERT INTO review_log (word_id, user_id, quality, interval_days)
+            VALUES (?, ?, ?, ?);
+            """
+            quality = 5 if is_correct else 1
+            interval_days = int((next_review_dt - datetime.datetime.now()).days)
+            if interval_days == 0:
+                interval_days = 1  # Для шага 0.5 дня пишем 1 день в лог
+                
+            await db.execute(log_query, (word_id, user_id, quality, interval_days))
+            
+            logging.info(f"Слово ID {word_id} успешно обновлено. Новый интервал улетает на: {next_review_str}")
+
+        except Exception as e:
+            # Если что-то пойдет не так, откатываем всю транзакцию
+            await db.rollback()
+            raise e
