@@ -7,64 +7,45 @@ from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, WebAppIn
 from aiogram.filters import Command
 
 from app.db.words import get_words_for_review, update_word_after_review
+from app.handlers.start import get_main_menu_keyboard
 
 review_router = Router()
 
 REVIEW_WEBAPP_URL = "https://artemdyrdin.github.io/RememberTheWordBot/review.html"
 
-@review_router.message(Command("review"))
-async def command_review_words(message: Message) -> None:
-    """
-    Хэндлер команды /review. Собирает слова для повторения,
-    упаковывает их в URL и выкатывает кнопку Web App.
-    """
+@review_router.message(F.text == "🧠 Повторить слова")
+async def menu_review_words(message: Message) -> None:
     user_id = message.from_user.id
-    
-    # 1. Получаем список слов из БД, у которых next_review <= текущему времени
     words_to_review = await get_words_for_review(user_id)
     
     if not words_to_review:
         await message.answer(
-            f"🎉 {html.bold('Great!')} На данный момент у тебя нет слов для повторения.\n"
-            f"Все карточки распределены по интервалам. Отдыхай или добавь новые слова через /add!"
+            f"🎉 {html.bold('Великолепно!')} На данный момент у тебя нет слов для повторения.\n"
+            f"Все карточки распределены по интервалам. Отдыхай!", 
+            reply_markup=get_main_menu_keyboard()
         )
         return
 
     try:
-        # 2. Сериализуем данные в JSON-строку
         json_data = json.dumps(words_to_review, ensure_ascii=False)
-        
-        # 3. Кодируем строку для безопасной передачи в параметрах URL
         encoded_data = urllib.parse.quote(json_data)
-        
-        # Добавляем cache-busting флаг версии (timestamp), чтобы избежать жесткого кэша ТГ
-        version_flag = int(time.time())
-        full_url = f"{REVIEW_WEBAPP_URL}?data={encoded_data}&v={version_flag}"
-        
-        # 4. Создаем Reply-клавиатуру с кнопкой Web App
-        keyboard = ReplyKeyboardMarkup(
+        url_with_data = f"{REVIEW_WEBAPP_URL}?data={encoded_data}"
+
+        inline_like_keyboard = ReplyKeyboardMarkup(
             keyboard=[
-                [
-                    KeyboardButton(
-                        text="🧠 Начать повторение слов",
-                        web_app=WebAppInfo(url=full_url)
-                    )
-                ]
+                [KeyboardButton(text="🧠 Запустить сессию повторения", web_app=WebAppInfo(url=url_with_data))]
             ],
             resize_keyboard=True,
             one_time_keyboard=True
         )
         
         await message.answer(
-            f"📦 Количество слов к повторению сегодня: {html.bold(len(words_to_review))}\n\n"
-            f"Нажми на кнопку ниже, чтобы запустить интерактивную сессию повторения:",
-            reply_markup=keyboard
+            f"📦 Карточек к повторению: {html.bold(len(words_to_review))}\n"
+            f"Нажми кнопку ниже для старта сессии:", 
+            reply_markup=inline_like_keyboard
         )
-        
     except Exception as e:
-        logging.error(f"Error encoding words for review: {e}")
-        await message.answer("❌ Произошла ошибка при генерации сессии повторения.")
-
+        await message.answer("❌ Произошла ошибка при генерации сессии.")
 
 @review_router.message(F.web_app_data, lambda msg: json.loads(msg.web_app_data.data).get("action") == "review")
 async def handle_review_results(message: Message) -> None:
@@ -75,7 +56,7 @@ async def handle_review_results(message: Message) -> None:
         results = json.loads(raw_data)
         
         if not results:
-            await message.answer("Сессия повторения была закрыта без ответов.")
+            await message.answer("Сессия повторения была закрыта без ответов.", reply_markup=get_main_menu_keyboard())
             return
 
         correct_count = 0
@@ -106,8 +87,8 @@ async def handle_review_results(message: Message) -> None:
             f"Интервалы повторения обновлены!"
         )
         
-        await message.answer(summary_text)
+        await message.answer(summary_text, reply_markup=get_main_menu_keyboard())
 
     except Exception as e:
         logging.error(f"Error while processing review results: {e}")
-        await message.answer("❌ Не удалось сохранить прогресс повторения.")
+        await message.answer("❌ Не удалось сохранить прогресс повторения.", reply_markup=get_main_menu_keyboard())

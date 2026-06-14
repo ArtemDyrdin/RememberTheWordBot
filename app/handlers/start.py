@@ -1,9 +1,27 @@
 from aiogram import Router, html
-from aiogram.types import Message
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import CommandStart
 from app.db.users import register_user
 
 core_router = Router()
+
+def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
+    """
+    Создает постоянное главное меню бота без привязки WebApp (просто текст).
+    """
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="➕ Добавить слово"),
+                KeyboardButton(text="🧠 Повторить слова")
+            ],
+            [
+                KeyboardButton(text="📊 Статистика")  # Задел на будущее
+            ]
+        ],
+        resize_keyboard=True,
+        is_persistent=True
+    )
 
 @core_router.message(CommandStart())
 async def command_start_handler(message: Message) -> None:
@@ -31,4 +49,7 @@ async def command_start_handler(message: Message) -> None:
     else:
         welcome_text = f"С возвращением, {html.bold(user.first_name)}! Рад снова тебя видеть. Раунд повторения слов?"
 
-    await message.answer(welcome_text)
+    await message.answer(
+        welcome_text,
+        reply_markup=get_main_menu_keyboard(),
+        )

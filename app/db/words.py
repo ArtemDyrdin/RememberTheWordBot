@@ -36,8 +36,16 @@ async def save_new_word(
 
     async with get_db() as db:
         try:
+            async with db.execute(
+                "SELECT id FROM words WHERE user_id = ? AND LOWER(word) = ?", 
+                (user_id, word.lower())
+            ) as cursor:
+                existing = await cursor.fetchone()
+                if existing:
+                    # Слово уже есть, не сохраняем
+                    return -1
             # 1. Сохраняем само слово
-            cursor = await db.execute(query_word, (user_id, word, transcription, now))
+            cursor = await db.execute(query_word, (user_id, word.lower(), transcription, now))
             word_id = cursor.lastrowid
             
             if not word_id:
