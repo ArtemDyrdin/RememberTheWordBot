@@ -7,7 +7,6 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
-            /* Надежные дефолты + нативные переменные ТГ */
             --bg-color: var(--tg-theme-bg-color, #f4f5f7);
             --text-color: var(--tg-theme-text-color, #000000);
             --hint-color: var(--tg-theme-hint-color, #8e8e93);
@@ -65,7 +64,6 @@
             transition: var(--transition);
         }
 
-        /* Адаптация границ инпутов под темную тему Telegram */
         .tg-theme-dark input[type="text"], 
         .tg-theme-dark textarea {
             border: 1px solid rgba(255, 255, 255, 0.15);
@@ -75,11 +73,12 @@
             border-color: var(--button-color);
         }
 
-        .search-wrapper {
+        /* Универсальная обертка для инпутов с кнопками справа */
+        .input-with-btn-wrapper {
             display: flex;
             gap: 10px;
         }
-        .search-wrapper input { flex: 1; }
+        .input-with-btn-wrapper input { flex: 1; }
 
         .btn-magic {
             background-color: var(--button-color);
@@ -92,6 +91,11 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            min-width: 48px; /* Чтобы кнопка была квадратной и удобной для тапа */
+        }
+
+        .btn-magic:active {
+            opacity: 0.8;
         }
 
         .chips-container {
@@ -137,7 +141,7 @@
     <div class="card">
         <div class="form-group">
             <label>Английское слово</label>
-            <div class="search-wrapper">
+            <div class="input-with-btn-wrapper">
                 <input type="text" id="word" placeholder="Например, resilient" autocomplete="off">
                 <button type="button" class="btn-magic" id="btn-fetch">
                     <span id="btn-text">✨</span>
@@ -159,8 +163,11 @@
         </div>
 
         <div class="form-group">
-            <label>Переводы (Нажми Enter для добавления)</label>
-            <input type="text" id="translation-input" placeholder="Введи перевод и нажми Enter">
+            <label>Переводы</label>
+            <div class="input-with-btn-wrapper">
+                <input type="text" id="translation-input" placeholder="Введи перевод">
+                <button type="button" class="btn-magic" id="btn-add-translation">➕</button>
+            </div>
             <div class="chips-container" id="translations-chips"></div>
         </div>
     </div>
@@ -173,38 +180,31 @@
     </div>
 
     <script>
-        // 1. Инициализация Telegram SDK
         const tg = window.Telegram.WebApp;
         
-        // Сигнализируем Telegram, что интерфейс готов к показу
         tg.ready();
         tg.expand();
 
-        // Динамически вешаем класс темы на body для кастомных фиксов CSS
         document.body.className = tg.colorScheme === 'dark' ? 'tg-theme-dark' : 'tg-theme-light';
 
-        // 2. Чтение URL параметров (?translations=true)
         const urlParams = new URLSearchParams(window.location.search);
         const autoTranslationsEnabled = urlParams.get('translations') === 'true';
 
-        // Данные приложения
         let translationsList = [];
 
-        // DOM-элементы
         const wordInput = document.getElementById('word');
         const transcriptionInput = document.getElementById('transcription');
         const definitionInput = document.getElementById('definition');
         const translationInput = document.getElementById('translation-input');
+        const btnAddTranslation = document.getElementById('btn-add-translation');
         const chipsContainer = document.getElementById('translations-chips');
         const contextInput = document.getElementById('context');
         const btnFetch = document.getElementById('btn-fetch');
         const btnText = document.getElementById('btn-text');
         const btnSpinner = document.getElementById('btn-spinner');
 
-        // 3. Настройка нативной Главной Кнопки ТГ (MainButton)
         function initMainButton() {
             tg.MainButton.setText("СОХРАНИТЬ СЛОВО");
-            // Безопасно выставляем цвета без вызова несуществующих методов строк
             tg.MainButton.setParams({
                 is_visible: true,
                 is_active: true
@@ -212,7 +212,6 @@
         }
         initMainButton();
 
-        // Логика добавления "чипсов" перевода
         function updateChips() {
             chipsContainer.innerHTML = '';
             translationsList.forEach((trans, index) => {
@@ -223,7 +222,6 @@
             });
         }
 
-        // Делегирование события клика для удаления чипсов
         chipsContainer.addEventListener('click', (e) => {
             if (e.target.classList.contains('close-btn')) {
                 const index = parseInt(e.target.getAttribute('data-index'));
@@ -232,20 +230,28 @@
             }
         });
 
-        // Добавление перевода по Enter
+        // [ФИКС]: Изолированная функция добавления перевода из инпута
+        function handleAddTranslation() {
+            const value = translationInput.value.trim();
+            if (value && !translationsList.includes(value)) {
+                translationsList.push(value);
+                updateChips();
+                translationInput.value = '';
+            }
+        }
+
+        // [ФИКС]: Добавление по клику на кнопку "+"
+        btnAddTranslation.addEventListener('click', handleAddTranslation);
+
+        // [ФИКС]: Надежный перехват мобильного Enter/Стрелочки
         translationInput.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault(); // Запрещаем сабмит формы или перенос строки
-                const value = this.value.trim();
-                if (value && !translationsList.includes(value)) {
-                    translationsList.push(value);
-                    updateChips();
-                    this.value = '';
-                }
+            if (e.key === 'Enter' || e.keyCode === 13) {
+                e.preventDefault(); 
+                handleAddTranslation();
+                translationInput.blur(); // Скрывает клавиатуру на телефоне для удобства
             }
         });
 
-        // 4. Логика запроса к API словаря
         btnFetch.addEventListener('click', async () => {
             const word = wordInput.value.trim();
             if (!word) {
@@ -253,7 +259,12 @@
                 return;
             }
 
-            // Включаем лоадер
+            transcriptionInput.value = '';
+            definitionInput.value = '';
+            contextInput.value = '';
+            translationsList = [];
+            updateChips();
+
             btnText.classList.add('hidden');
             btnSpinner.style.display = 'block';
 
@@ -264,7 +275,6 @@
                 const data = await response.json();
                 const entry = data.entries[0];
 
-                // Транскрипция
                 let uk = '', us = '';
                 if (entry.pronunciations) {
                     entry.pronunciations.forEach(p => {
@@ -279,13 +289,10 @@
                     ? transStr.join(' | ')
                     : (entry.pronunciations?.[0]?.text || '');
 
-                // Дефиниция и пример
                 const firstSense = entry.senses?.[0];
                 if (firstSense?.definition) definitionInput.value = firstSense.definition;
                 if (firstSense?.examples?.[0]) contextInput.value = firstSense.examples[0];
 
-                // Переводы на русский
-                translationsList = [];
                 entry.senses.forEach(sense => {
                     sense.translations?.forEach(t => {
                         if ((t.language?.code === 'rus' || t.language?.code === 'ru')
@@ -300,15 +307,14 @@
                 console.error(e);
                 tg.showAlert(`Ошибка: ${e.message}`);
             } finally {
-                // Выключаем лоадер
                 btnText.classList.remove('hidden');
+                btnSpinner.style.none = 'none';
                 btnSpinner.style.display = 'none';
             }
         });
 
-        // 5. Обработка клика по нативной кнопке Telegram
         tg.onEvent('mainButtonClicked', function() {
-            const word = wordInput.value.strip ? wordInput.value.strip() : wordInput.value.trim();
+            const word = wordInput.value.trim();
             const transcription = transcriptionInput.value.trim();
             const definition = definitionInput.value.trim();
             const context = contextInput.value.trim();
@@ -327,7 +333,6 @@
                 context: context
             };
 
-            // Отправляем данные в чат бота
             tg.sendData(JSON.stringify(payload));
             tg.close();
         });
